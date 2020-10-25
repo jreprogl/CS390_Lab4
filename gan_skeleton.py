@@ -84,8 +84,8 @@ def preprocessData(raw):
         ilist = [i for i in range(y.shape[0]) if y[i] == c]
         xP = x[ilist]
     # NOTE: Normalize from 0 to 1 or -1 to 1
-    #xP = xP/255.0
-    xP = xP/127.5 - 1
+    xP = xP/255.0
+    #xP = xP/127.5 - 1
     print("Shape of Preprocessed dataset: %s." % str(xP.shape))
     return xP
 
@@ -111,10 +111,22 @@ def buildGenerator():
     #       mnist_f (28 x 28 x 1) image
 
     # Creating a Keras Model out of the network
+    model = Sequential()
+    model.add(Dense(256, input_dim=NOISE_SIZE))
+    model.add(LeakyRelu(alpha=0.2))
+    model.add(BatchNormalization(momentum=0.8))
+    model.add(Dense(512))
+    model.add(LeakyRelu(alpha=0.2))
+    model.add(BatchNormalization(momentum=0.8))
+    model.add(Dense(1024))
+    model.add(LeakyRelu(alpha=0.2))
+    model.add(BatchNormalization(momentum=0.8))
+    model.add(Dense(IMAGE_SIZE, activation="tanh"))
+    model.add(Reshape(IMAGE_SHAPE))
     inputTensor = Input(shape = (NOISE_SIZE,))
     return Model(inputTensor, model(inputTensor))
 
-def buildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
+def ibuildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
     # Setup
     opt = Adam(lr = 0.0002)
     loss = "binary_crossentropy"
