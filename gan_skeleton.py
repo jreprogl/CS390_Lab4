@@ -100,6 +100,12 @@ def buildDiscriminator():
     #       and possibly from the generator - and outputs a single digit REAL (1) or FAKE (0)
 
     # Creating a Keras Model out of the network
+    model.add(Flatten(input_shape = IMAGE_SIZE))
+    model.add(Dense(512))
+    model.add(LeakyReLU(alpha = 0.2))
+    model.add(Dense(256))
+    mode.add(LeakyReLU(alpha = 0.2))
+    model.add(Dense(1, activation = "sigmoid"))
     inputTensor = Input(shape = IMAGE_SHAPE)
     return Model(inputTensor, model(inputTensor))
 
