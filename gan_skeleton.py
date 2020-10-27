@@ -38,7 +38,7 @@ elif DATASET == "mnist_f":
     IMAGE_SHAPE = (IH, IW, IZ) = (28, 28, 1)
     CLASSLIST = ["top", "trouser", "pullover", "dress", "coat", "sandal", "shirt", "sneaker", "bag", "ankle boot"]
     # TODO: choose a label to train on from the CLASSLIST above
-    LABEL = "sneaker"
+    LABEL = "pullover"
 
 elif DATASET == "cifar_10":
     IMAGE_SHAPE = (IH, IW, IZ) = (32, 32, 3)
@@ -101,13 +101,16 @@ def buildDiscriminator():
     #       and possibly from the generator - and outputs a single digit REAL (1) or FAKE (0)
 
     # Creating a Keras Model out of the network
-    model.add(Conv2D(32, kernel_size = (3, 3), activation = LeakyReLU(0.2), input_shape = IMAGE_SHAPE))
-    model.add(Conv2D(64, kernel_size = (3, 3), activation = LeakyReLU(0.2)))
-    model.add(Conv2D(128, kernel_size = (3, 3), activation = LeakyReLU(0.2)))
-    model.add(MaxPooling2D(pool_size = (2, 2)))
-    model.add(Flatten())
-    model.add(keras.layers.Dropout(0.2))
-    #model.add(Flatten(input_shape = (IH, IW, IZ)))
+    #model.add(Conv2D(32, kernel_size = (3, 3), input_shape = IMAGE_SHAPE))
+    #model.add(LeakyReLU(0.2))
+    #model.add(Conv2D(64, kernel_size = (3, 3)))
+    #model.add(LeakyReLU(0.2))
+  #  model.add(Conv2D(128, kernel_size = (3, 3), activation = LeakyReLU(0.2)))
+  #  model.add(MaxPooling2D(pool_size = (2, 2)))
+    
+   # model.add(keras.layers.Dropout(0.2))
+  #  model.add(Flatten())
+    model.add(Flatten(input_shape = IMAGE_SHAPE))
     model.add(Dense(512))
     model.add(LeakyReLU(alpha = 0.2))
     model.add(Dense(256))
@@ -140,6 +143,7 @@ def buildGenerator():
 
 def buildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
     # Setup
+   # opt = Adam(lr = 0.0002)
     opt = Adam(lr = 0.0002)
     loss = "binary_crossentropy"
 
@@ -181,14 +185,21 @@ def buildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
 
     return (generator, adversary, gan)
 
+import matplotlib.pyplot as plt
+
 # Generates an image using given generator
 def runGAN(generator, outfile):
     noise = np.random.normal(0, 1, (1, NOISE_SIZE)) # generate a random noise array
-    img = generator.predict(noise)[0]               # run generator on noise
+    img = generator.predict(noise)[0, :, :, 0]               # run generator on noise
     img = np.squeeze(img)                           # readjust image shape if needed
+    #print(img)
     img = (0.5*img + 0.5)*255                       # adjust values to range from 0 to 255 as needed
+    img = img.astype("uint8")
+    #img = np.reshape(img, IMAGE_SHAPE)
+    #plt.imshow(img)
+    #plt.show()
     #imsave(outfile, img)                            # store resulting image
-    img = Image.fromarray(img, 'RGB')
+    img = Image.fromarray(img, "L")
     img.save(outfile)
 
 ################################### RUNNING THE PIPELINE #############################
@@ -203,7 +214,7 @@ def main():
     # Filter for just the class we are trying to generate
     data = preprocessData(raw)
     # Create and train all facets of the GAN
-    (generator, adv, gan) = buildGAN(data, epochs = 20000, loggingInterval = 500)
+    (generator, adv, gan) = buildGAN(data, epochs = 50000, batchSize = 50, loggingInterval = 500)
     # Utilize our spooky neural net gimmicks to create realistic counterfeit images
     for i in range(10):
         runGAN(generator, OUTPUT_DIR + "/" + OUTPUT_NAME + "_final_%d.png" % i)
