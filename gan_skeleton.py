@@ -39,7 +39,7 @@ elif DATASET == "mnist_f":
     IMAGE_SHAPE = (IH, IW, IZ) = (28, 28, 1)
     CLASSLIST = ["top", "trouser", "pullover", "dress", "coat", "sandal", "shirt", "sneaker", "bag", "ankle boot"]
     # TODO: choose a label to train on from the CLASSLIST above
-    LABEL = "bag"
+    LABEL = "ankle boot"
 
 elif DATASET == "cifar_10":
     IMAGE_SHAPE = (IH, IW, IZ) = (32, 32, 3)
@@ -52,7 +52,7 @@ NOISE_SIZE = 100    # length of noise array
 
 # Ratio ex: if 1:2 ration of discriminator:generator, set adv_ratio = 2 and gen_ratio = 1
 # Implementation uses mod to determine if somthing gets trained. i.e. if adv_ratio is set to 2, it will train every other epoch
-USE_RATIO = 1
+USE_RATIO = 0
 adv_ratio = 2
 gen_ratio = 1
 
@@ -60,7 +60,7 @@ alpha_relu = 0.1
 
 gen_losses_plot = [[], []]
 adv_losses_plot = [[], []]
-epochs_to_view_plot = 5000
+#epochs_to_view_plot = 5000
 
 # file prefixes and directory
 OUTPUT_NAME = DATASET + "_" + LABEL
@@ -115,11 +115,25 @@ def buildDiscriminator():
 
     # Creating a Keras Model out of the network
   
-    model.add(Flatten(input_shape = IMAGE_SHAPE))
-    model.add(Dense(512))
-    model.add(LeakyReLU(alpha = alpha_relu))
-    model.add(Dense(256))
-    model.add(LeakyReLU(alpha = alpha_relu))
+    if DATASET != 'cifar_10':
+        model.add(Flatten(input_shape = IMAGE_SHAPE))
+        model.add(Dense(512))
+        model.add(LeakyReLU(alpha = alpha_relu))
+        model.add(Dense(256))
+        model.add(LeakyReLU(alpha = alpha_relu))
+    else:
+    	model.add(Conv2D(32, kernel_size = (3,3), input_shape = IMAGE_SHAPE))
+    	model.add(LeakyReLU(alpha = alpha_relu))
+    	model.add(MaxPooling2D(pool_size = (2,2)))
+    	model.add(Conv2D(64, kernel_size = (3, 3)))
+    	model.add(LeakyReLU(alpha = alpha_relu))
+    	model.add(MaxPooling2D(pool_size = (2,2)))
+    	model.add(Flatten())
+    	model.add(Dense(512))
+    	model.add(LeakyReLU(alpha = alpha_relu))
+    	model.add(Dense(256))
+    	model.add(LeakyReLU(alpha = alpha_relu))
+    	model.add(Dropout(0.2))
     model.add(Dense(1, activation = "sigmoid"))
     inputTensor = Input(shape = IMAGE_SHAPE)
     return Model(inputTensor, model(inputTensor))
@@ -136,16 +150,15 @@ def buildGenerator():
     
  
     if DATASET != 'cifar_10':
-        model.add(Dense(256, input_dim=NOISE_SIZE))
-        model.add(LeakyReLU(alpha=alpha_relu))
-        model.add(BatchNormalization(momentum=0.8))
-        model.add(Dense(512))
-        model.add(LeakyReLU(alpha=alpha_relu))
-        model.add(BatchNormalization(momentum=0.8))
-        model.add(Dense(1024))
-        model.add(LeakyReLU(alpha=alpha_relu))
-        model.add(BatchNormalization(momentum=0.8))
-        model.add(Dense(IMAGE_SIZE, activation="tanh"))
+    	nodes = 128*7*7
+    	model.add(Dense(nodes, input_dim=NOISE_SIZE))
+    	model.add(LeakyReLU(alpha = alpha_relu))
+    	model.add(Reshape((7, 7, 128)))
+    	model.add(Conv2DTranspose(128, (4,4), strides=(2,2), padding='same'))
+    	model.add(LeakyReLU(alpha = alpha_relu))
+    	model.add(Conv2DTranspose(128, (4,4), strides=(2,2), padding='same'))
+    	model.add(LeakyReLU(alpha = alpha_relu))
+    	model.add(Conv2D(1, (3,3), activation='tanh', padding='same'))
     else:    
 
     	nodes = 256*4*4
@@ -159,7 +172,6 @@ def buildGenerator():
     	model.add(Conv2DTranspose(128, (4,4), strides=(2,2), padding='same'))
     	model.add(LeakyReLU(alpha_relu))
     	model.add(Conv2D(3, (3,3), activation='tanh', padding='same'))
-    #model.add(Dense(IMAGE_SIZE, activation="tanh"))
     model.add(Reshape(IMAGE_SHAPE))
     inputTensor = Input(shape = (NOISE_SIZE,))
     return Model(inputTensor, model(inputTensor))
@@ -262,7 +274,7 @@ def main():
     # Filter for just the class we are trying to generate
     data = preprocessData(raw)
     # Create and train all facets of the GAN
-    (generator, adv, gan) = buildGAN(data, epochs = 20000, batchSize = 75, loggingInterval = 500)
+    (generator, adv, gan) = buildGAN(data, epochs = 10000, batchSize = 32, loggingInterval = 500)
     # Utilize our spooky neural net gimmicks to create realistic counterfeit images
     for i in range(10):
         runGAN(generator, OUTPUT_DIR + "/" + OUTPUT_NAME + "_final_%d.png" % i)
