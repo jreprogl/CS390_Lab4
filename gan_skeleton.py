@@ -52,7 +52,7 @@ NOISE_SIZE = 100    # length of noise array
 
 # Ratio ex: if 1:2 ration of discriminator:generator, set adv_ratio = 2 and gen_ratio = 1
 # Implementation uses mod to determine if somthing gets trained. i.e. if adv_ratio is set to 2, it will train every other epoch
-USE_RATIO = 0
+USE_RATIO = 1
 adv_ratio = 2
 gen_ratio = 1
 
@@ -185,9 +185,12 @@ def buildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
     trueCol = np.ones((batchSize, 1))
     falseCol = np.zeros((batchSize, 1))
     totalSteps = 0
+    global USE_RATIO
+    global adv_ratio
+    global gen_ratio
     for epoch in range(1, epochs+1):
     	totalSteps = totalSteps + len(images)
-    	if (USE_RATIO == 0):# or (USE_RATIO == 1 and adv_ratio % epoch == 0)):
+    	if (USE_RATIO == 0 or (USE_RATIO == 1 and epoch % adv_ratio == 0)):
             # Train discriminator with a true and false batch
             batch = images[np.random.randint(0, images.shape[0], batchSize)]
             noise = np.random.normal(0, 1, (batchSize, NOISE_SIZE))
@@ -197,7 +200,7 @@ def buildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
             advLoss = np.add(advTrueLoss, advFalseLoss) * 0.5
             adv_losses_plot[0].append(totalSteps)
             adv_losses_plot[1].append(advLoss[0])
-    	if (USE_RATIO == 0):# or (USE_RATIO == 1 and gen_ratio % epoch == 0)):
+    	if (USE_RATIO == 0 or (USE_RATIO == 1 and epoch % gen_ratio == 0)):
             # Train generator by training GAN while keeping adversary component constant
             noise = np.random.normal(0, 1, (batchSize, NOISE_SIZE))
             genLoss = gan.train_on_batch(noise, trueCol)
@@ -212,12 +215,12 @@ def buildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
             print("\t\tDiscriminator accuracy: %.2f%%." % (100 * advLoss[1]))
             print("\t\tGenerator loss: %f." % genLoss)
             runGAN(generator, OUTPUT_DIR + "/" + OUTPUT_NAME + "_test_%d.png" % (epoch / loggingInterval))
-    	if (epoch % epochs_to_view_plot == 0):
-            plt.plot(adv_losses_plot[0], adv_losses_plot[1], label="adversary")
-            plt.plot(gen_losses_plot[0], gen_losses_plot[1], label="generator")
-            #pdb.set_trace()
-            plt.legend(loc="upper left")
-            plt.show()
+#    	if (epoch % epochs_to_view_plot == 0):
+#            plt.plot(adv_losses_plot[0], adv_losses_plot[1], label="adversary")
+#            plt.plot(gen_losses_plot[0], gen_losses_plot[1], label="generator")
+#            #pdb.set_trace()
+#            plt.legend(loc="upper left")
+#            plt.show()
     	if (epoch == epochs - 1):
             plt.plot(adv_losses_plot[0], adv_losses_plot[1], label="adversary")
             plt.plot(gen_losses_plot[0], gen_losses_plot[1], label="generator")
