@@ -16,6 +16,7 @@ from tensorflow.keras.optimizers import Adam
 #from scipy.misc import imsave
 import random
 from PIL import Image
+import matplotlib.pyplot as plt
 
 random.seed(1618)
 np.random.seed(1618)
@@ -38,16 +39,28 @@ elif DATASET == "mnist_f":
     IMAGE_SHAPE = (IH, IW, IZ) = (28, 28, 1)
     CLASSLIST = ["top", "trouser", "pullover", "dress", "coat", "sandal", "shirt", "sneaker", "bag", "ankle boot"]
     # TODO: choose a label to train on from the CLASSLIST above
-    LABEL = "pullover"
+    LABEL = "bag"
 
 elif DATASET == "cifar_10":
     IMAGE_SHAPE = (IH, IW, IZ) = (32, 32, 3)
     CLASSLIST = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
-    LABEL = "airplane"
+    LABEL = "deer"
 
 IMAGE_SIZE = IH*IW*IZ
 
 NOISE_SIZE = 100    # length of noise array
+
+# Ratio ex: if 1:2 ration of discriminator:generator, set adv_ratio = 2 and gen_ratio = 1
+# Implementation uses mod to determine if somthing gets trained. i.e. if adv_ratio is set to 2, it will train every other epoch
+USE_RATIO = 0
+adv_ratio = 2
+gen_ratio = 1
+
+alpha_relu = 0.1
+
+gen_losses_plot = [[], []]
+adv_losses_plot = [[], []]
+epochs_to_view_plot = 5000
 
 # file prefixes and directory
 OUTPUT_NAME = DATASET + "_" + LABEL
@@ -101,20 +114,12 @@ def buildDiscriminator():
     #       and possibly from the generator - and outputs a single digit REAL (1) or FAKE (0)
 
     # Creating a Keras Model out of the network
-    #model.add(Conv2D(32, kernel_size = (3, 3), input_shape = IMAGE_SHAPE))
-    #model.add(LeakyReLU(0.2))
-    #model.add(Conv2D(64, kernel_size = (3, 3)))
-    #model.add(LeakyReLU(0.2))
-  #  model.add(Conv2D(128, kernel_size = (3, 3), activation = LeakyReLU(0.2)))
-  #  model.add(MaxPooling2D(pool_size = (2, 2)))
-    
-   # model.add(keras.layers.Dropout(0.2))
-  #  model.add(Flatten())
+  
     model.add(Flatten(input_shape = IMAGE_SHAPE))
     model.add(Dense(512))
-    model.add(LeakyReLU(alpha = 0.2))
+    model.add(LeakyReLU(alpha = alpha_relu))
     model.add(Dense(256))
-    model.add(LeakyReLU(alpha = 0.2))
+    model.add(LeakyReLU(alpha = alpha_relu))
     model.add(Dense(1, activation = "sigmoid"))
     inputTensor = Input(shape = IMAGE_SHAPE)
     return Model(inputTensor, model(inputTensor))
@@ -127,16 +132,34 @@ def buildGenerator():
     #       mnist_f (28 x 28 x 1) image
 
     # Creating a Keras Model out of the network
-    model.add(Dense(256, input_dim=NOISE_SIZE))
-    model.add(LeakyReLU(alpha=0.2))
-    model.add(BatchNormalization(momentum=0.8))
-    model.add(Dense(512))
-    model.add(LeakyReLU(alpha=0.2))
-    model.add(BatchNormalization(momentum=0.8))
-    model.add(Dense(1024))
-    model.add(LeakyReLU(alpha=0.2))
-    model.add(BatchNormalization(momentum=0.8))
-    model.add(Dense(IMAGE_SIZE, activation="tanh"))
+
+    
+ 
+    if DATASET != 'cifar_10':
+        model.add(Dense(256, input_dim=NOISE_SIZE))
+        model.add(LeakyReLU(alpha=alpha_relu))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Dense(512))
+        model.add(LeakyReLU(alpha=alpha_relu))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Dense(1024))
+        model.add(LeakyReLU(alpha=alpha_relu))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(Dense(IMAGE_SIZE, activation="tanh"))
+    else:    
+
+    	nodes = 256*4*4
+    	model.add(Dense(nodes, input_dim=NOISE_SIZE))
+    	model.add(LeakyReLU(alpha_relu))
+    	model.add(Reshape((4, 4, 256)))
+    	model.add(Conv2DTranspose(128, (4,4), strides=(2,2), padding='same'))
+    	model.add(LeakyReLU(alpha_relu))
+    	model.add(Conv2DTranspose(128, (4,4), strides=(2,2), padding='same'))
+    	model.add(LeakyReLU(alpha_relu))
+    	model.add(Conv2DTranspose(128, (4,4), strides=(2,2), padding='same'))
+    	model.add(LeakyReLU(alpha_relu))
+    	model.add(Conv2D(3, (3,3), activation='tanh', padding='same'))
+    #model.add(Dense(IMAGE_SIZE, activation="tanh"))
     model.add(Reshape(IMAGE_SHAPE))
     inputTensor = Input(shape = (NOISE_SIZE,))
     return Model(inputTensor, model(inputTensor))
@@ -161,45 +184,67 @@ def buildGAN(images, epochs = 40000, batchSize = 32, loggingInterval = 0):
     # Training
     trueCol = np.ones((batchSize, 1))
     falseCol = np.zeros((batchSize, 1))
-    for epoch in range(epochs):
-
-        # Train discriminator with a true and false batch
-        batch = images[np.random.randint(0, images.shape[0], batchSize)]
-        noise = np.random.normal(0, 1, (batchSize, NOISE_SIZE))
-        genImages = generator.predict(noise)
-        advTrueLoss = adversary.train_on_batch(batch, trueCol)
-        advFalseLoss = adversary.train_on_batch(genImages, falseCol)
-        advLoss = np.add(advTrueLoss, advFalseLoss) * 0.5
-
-        # Train generator by training GAN while keeping adversary component constant
-        noise = np.random.normal(0, 1, (batchSize, NOISE_SIZE))
-        genLoss = gan.train_on_batch(noise, trueCol)
+    totalSteps = 0
+    for epoch in range(1, epochs+1):
+    	totalSteps = totalSteps + len(images)
+    	if (USE_RATIO == 0):# or (USE_RATIO == 1 and adv_ratio % epoch == 0)):
+            # Train discriminator with a true and false batch
+            batch = images[np.random.randint(0, images.shape[0], batchSize)]
+            noise = np.random.normal(0, 1, (batchSize, NOISE_SIZE))
+            genImages = generator.predict(noise)
+            advTrueLoss = adversary.train_on_batch(batch, trueCol)
+            advFalseLoss = adversary.train_on_batch(genImages, falseCol)
+            advLoss = np.add(advTrueLoss, advFalseLoss) * 0.5
+            adv_losses_plot[0].append(totalSteps)
+            adv_losses_plot[1].append(advLoss[0])
+    	if (USE_RATIO == 0):# or (USE_RATIO == 1 and gen_ratio % epoch == 0)):
+            # Train generator by training GAN while keeping adversary component constant
+            noise = np.random.normal(0, 1, (batchSize, NOISE_SIZE))
+            genLoss = gan.train_on_batch(noise, trueCol)
+            gen_losses_plot[0].append(totalSteps)
+            gen_losses_plot[1].append(genLoss)
+            
 
         # Logging
-        if loggingInterval > 0 and epoch % loggingInterval == 0:
+    	if loggingInterval > 0 and epoch % loggingInterval == 0:
             print("\tEpoch %d:" % epoch)
             print("\t\tDiscriminator loss: %f." % advLoss[0])
             print("\t\tDiscriminator accuracy: %.2f%%." % (100 * advLoss[1]))
             print("\t\tGenerator loss: %f." % genLoss)
             runGAN(generator, OUTPUT_DIR + "/" + OUTPUT_NAME + "_test_%d.png" % (epoch / loggingInterval))
-
+    	if (epoch % epochs_to_view_plot == 0):
+            plt.plot(adv_losses_plot[0], adv_losses_plot[1], label="adversary")
+            plt.plot(gen_losses_plot[0], gen_losses_plot[1], label="generator")
+            #pdb.set_trace()
+            plt.legend(loc="upper left")
+            plt.show()
+    	if (epoch == epochs - 1):
+            plt.plot(adv_losses_plot[0], adv_losses_plot[1], label="adversary")
+            plt.plot(gen_losses_plot[0], gen_losses_plot[1], label="generator")
+            plt.legend(loc="upper left")
+            plt.savefig(OUTPUT_DIR + "/loss.png")
     return (generator, adversary, gan)
 
 import matplotlib.pyplot as plt
+import pdb
 
 # Generates an image using given generator
 def runGAN(generator, outfile):
     noise = np.random.normal(0, 1, (1, NOISE_SIZE)) # generate a random noise array
-    img = generator.predict(noise)[0, :, :, 0]               # run generator on noise
+    img = generator.predict(noise)[0]             # run generator on noise
+
     img = np.squeeze(img)                           # readjust image shape if needed
     #print(img)
     img = (0.5*img + 0.5)*255                       # adjust values to range from 0 to 255 as needed
     img = img.astype("uint8")
     #img = np.reshape(img, IMAGE_SHAPE)
-    #plt.imshow(img)
-    #plt.show()
+   # plt.imshow(img)
+   # plt.show()
     #imsave(outfile, img)                            # store resulting image
-    img = Image.fromarray(img, "L")
+    if DATASET == 'cifar_10':
+    	img = Image.fromarray(img, "RGB")
+    else:
+    	img = Image.fromarray(img, "L")
     img.save(outfile)
 
 ################################### RUNNING THE PIPELINE #############################
@@ -214,7 +259,7 @@ def main():
     # Filter for just the class we are trying to generate
     data = preprocessData(raw)
     # Create and train all facets of the GAN
-    (generator, adv, gan) = buildGAN(data, epochs = 50000, batchSize = 50, loggingInterval = 500)
+    (generator, adv, gan) = buildGAN(data, epochs = 20000, batchSize = 75, loggingInterval = 500)
     # Utilize our spooky neural net gimmicks to create realistic counterfeit images
     for i in range(10):
         runGAN(generator, OUTPUT_DIR + "/" + OUTPUT_NAME + "_final_%d.png" % i)
